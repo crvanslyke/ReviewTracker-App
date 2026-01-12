@@ -51,7 +51,9 @@ class ItemUpdate(BaseModel):
 # --------------------------------------------------------------------------------
 
 # Handle Vercel's 'postgres://' quirk for SQLAlchemy
-db_url = os.environ.get("DATABASE_URL", "sqlite:///editorial_tracker.db")
+# Vercel's "Connect Store" creates POSTGRES_URL by default.
+db_url = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL") or "sqlite:///editorial_tracker.db"
+
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
