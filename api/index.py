@@ -7,10 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from sqlmodel import Session, select
 
-# Add the parent directory to sys.path to import editorial_tracker
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from editorial_tracker import init_db, add_item, list_items, update_item, get_venues, get_engine, WorkItem
+from .editorial_tracker import init_db, add_item, list_items, update_item, get_venues, get_engine, WorkItem
 
 app = FastAPI()
 

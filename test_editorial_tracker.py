@@ -3,7 +3,7 @@ import shutil
 import csv
 from pathlib import Path
 from sqlmodel import Session, create_engine, SQLModel, select
-from editorial_tracker import init_db, add_item, list_items, update_item, export_csv, WorkItem
+from api.editorial_tracker import init_db, add_item, list_items, update_item, export_csv, WorkItem, get_engine
 
 class TestEditorialTracker(unittest.TestCase):
     def setUp(self):
