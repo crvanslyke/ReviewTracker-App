@@ -299,6 +299,31 @@ app = FastAPI()
 # Database Setup
 engine = get_engine()
 
+# Debug endpoint to verify paths on Vercel
+@app.get("/api/debug")
+def debug_paths():
+    current = os.getcwd()
+    ls_current = os.listdir(current)
+    
+    # Check parent
+    parent = os.path.dirname(current)
+    ls_parent = os.listdir(parent) if os.path.exists(parent) else []
+    
+    # Check for public
+    public_path = os.path.join(os.path.dirname(__file__), "../public")
+    public_exists = os.path.exists(public_path)
+    ls_public = os.listdir(public_path) if public_exists else []
+
+    return {
+        "cwd": current,
+        "ls_cwd": ls_current,
+        "ls_parent": ls_parent,
+        "file_loc": __file__,
+        "public_path_check": public_path,
+        "public_exists": public_exists,
+        "ls_public": ls_public
+    }
+
 # On Vercel startup (or local), ensure DB tables exist
 @app.on_event("startup")
 def on_startup():
