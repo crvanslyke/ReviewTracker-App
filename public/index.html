@@ -5,164 +5,148 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editorial Tracker</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            max-width: 960px;
-            margin: 2rem auto;
-            padding: 0 1rem;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-
-        th,
-        td {
-            text-align: left;
-            padding: 0.5rem;
-            border-bottom: 1px solid #ddd;
-        }
-
-        th {
-            background-color: #f4f4f4;
-            cursor: pointer;
-        }
-
-        .form-group {
-            margin-bottom: 1rem;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-        }
-
-        input,
-        select {
-            width: 100%;
-            padding: 0.5rem;
-            margin-bottom: 0.5rem;
-            max-width: 400px;
-        }
-
-        button {
-            padding: 0.5rem 1rem;
-            background-color: #0070f3;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background-color: #0051a2;
-        }
-
-        .status-select {
-            max-width: 150px;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <h1>Editorial Tracker</h1>
 
-    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px;">
-        <h3 id="form-title">Add New Item</h3>
-        <form id="item-form">
-            <input type="hidden" id="item-id">
-            <input type="text" id="title" placeholder="Title" required>
-            <input type="text" id="reference_id" placeholder="Manuscript ID">
-            <input type="text" id="venue" list="venue-list" placeholder="Venue (Journal/Conf)">
-            <datalist id="venue-list">
-                <!-- Populated dynamically -->
-            </datalist>
-            <input type="date" id="due_date">
+    <div class="container">
+        <header>
+            <h1>Editorial Tracker</h1>
+            <button class="btn" onclick="openModal()">+ New Entry</button>
+        </header>
 
-            <div style="margin-top: 0.5rem;">
-                <button type="submit" id="submit-btn">Add</button>
-                <button type="button" id="cancel-btn" onclick="resetForm()"
-                    style="background-color: #666; display: none;">Cancel</button>
+        <div class="stats-row">
+            <div class="stat-card">
+                <span class="stat-label">Active Reviews</span>
+                <span class="stat-value" id="stat-active">0</span>
             </div>
-        </form>
+            <div class="stat-card">
+                <span class="stat-label">Pending Decisions</span>
+                <span class="stat-value" id="stat-pending">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Completed</span>
+                <span class="stat-value" id="stat-completed">0</span>
+            </div>
+        </div>
+
+        <div class="table-card">
+            <table id="items-table">
+                <thead>
+                    <tr>
+                        <th onclick="sort('title')">Title<span id="sort-title"></span></th>
+                        <th onclick="sort('reference_id')">Manuscript ID<span id="sort-reference_id"></span></th>
+                        <th onclick="sort('venue')">Venue<span id="sort-venue"></span></th>
+                        <th onclick="sort('due_date')">Due Date<span id="sort-due_date"></span></th>
+                        <th onclick="sort('status')">Status<span id="sort-status"></span></th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Items will be loaded here -->
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    <style>
-        th {
-            cursor: pointer;
-            user-select: none;
-        }
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <h3 id="form-title" style="margin-bottom: 1.5rem;">Add New Item</h3>
+            <form id="item-form">
+                <input type="hidden" id="item-id">
 
-        th:hover {
-            background-color: #e0e0e0;
-        }
+                <div class="input-group">
+                    <input type="text" id="title" placeholder="Title" required>
+                </div>
 
-        th span {
-            margin-left: 5px;
-            font-size: 0.8em;
-        }
-    </style>
+                <div class="input-group">
+                    <input type="text" id="reference_id" placeholder="Manuscript ID (Optional)">
+                </div>
 
-    <table id="items-table">
-        <thead>
-            <tr>
-                <th onclick="sort('title')">Title<span id="sort-title"></span></th>
-                <th onclick="sort('reference_id')">Manuscript ID<span id="sort-reference_id"></span></th>
-                <th onclick="sort('venue')">Venue<span id="sort-venue"></span></th>
-                <th onclick="sort('due_date')">Due Date<span id="sort-due_date"></span></th>
-                <th onclick="sort('status')">Status<span id="sort-status"></span></th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            <!-- Items will be loaded here -->
-        </tbody>
-    </table>
+                <div class="input-group">
+                    <input type="text" id="venue" list="venue-list" placeholder="Venue (Journal/Conf)">
+                    <datalist id="venue-list"></datalist>
+                </div>
+
+                <div class="input-group">
+                    <input type="date" id="due_date">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn" id="submit-btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script>
         const API_URL = '/api/items';
         let currentSort = 'due_date';
         let currentOrder = 'ASC';
+        let allItems = [];
 
         async function loadVenues() {
-            const res = await fetch('/api/venues');
-            const venues = await res.json();
-            const datalist = document.getElementById('venue-list');
-            datalist.innerHTML = venues.map(v => `<option value="${v}">`).join('');
+            try {
+                const res = await fetch('/api/venues');
+                const venues = await res.json();
+                const datalist = document.getElementById('venue-list');
+                datalist.innerHTML = venues.map(v => `<option value="${v}">`).join('');
+            } catch (e) { console.error("Error loading venues", e); }
         }
 
         async function loadItems() {
-            const res = await fetch(`${API_URL}?sort=${currentSort}&order=${currentOrder}`);
-            const items = await res.json();
+            try {
+                const res = await fetch(`${API_URL}?sort=${currentSort}&order=${currentOrder}`);
+                allItems = await res.json();
+
+                renderTable(allItems);
+                updateStats(allItems);
+                updateSortIcons();
+            } catch (e) { console.error("Error loading items", e); }
+        }
+
+        function renderTable(items) {
             const tbody = document.querySelector('#items-table tbody');
             tbody.innerHTML = '';
-
-            updateSortIcons();
 
             items.forEach(item => {
                 const safeItem = JSON.stringify(item).replace(/"/g, '&quot;');
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${item.title}</td>
-                    <td>${item.reference_id || '-'}</td>
-                    <td>${item.venue || '-'}</td>
-                    <td>${item.due_date || '-'}</td>
-                    <td>
-                        <select class="status-select" onchange="updateStatus(${item.id}, this.value)">
-                            <option value="invited" ${item.status === 'invited' ? 'selected' : ''}>Invited</option>
-                            <option value="active" ${item.status === 'active' ? 'selected' : ''}>Active</option>
-                            <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>Completed</option>
-                        </select>
-                    </td>
-                    <td>
-                        <button onclick="editItem(${safeItem})" style="background-color: #f0f0f0; color: #333; border: 1px solid #ccc;">Edit</button>
-                    </td>
-                `;
+                <td>${item.title}</td>
+                <td>${item.reference_id || '<span style="color:#666;">-</span>'}</td>
+                <td>${item.venue || '<span style="color:#666;">-</span>'}</td>
+                <td>${item.due_date || '<span style="color:#666;">-</span>'}</td>
+                <td>
+                    <select class="status-select" onchange="updateStatus(${item.id}, this.value)">
+                        <option value="invited" ${item.status === 'invited' ? 'selected' : ''}>Invited</option>
+                        <option value="active" ${item.status === 'active' ? 'selected' : ''}>Active</option>
+                        <option value="pending" ${item.status === 'pending' ? 'selected' : ''}>Pending</option>
+                        <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>Completed</option>
+                        <option value="rejected" ${item.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+                    </select>
+                </td>
+                <td>
+                    <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" onclick="editItem(${safeItem})">Edit</button>
+                </td>
+            `;
                 tbody.appendChild(tr);
             });
+        }
+
+        function updateStats(items) {
+            const activeCount = items.filter(i => ['active', 'invited'].includes(i.status)).length;
+            const pendingCount = items.filter(i => ['pending', 'in_review'].includes(i.status)).length;
+            // Completed includes 'completed', 'accepted', 'rejected'
+            const completedCount = items.filter(i => ['completed', 'accepted', 'rejected'].includes(i.status)).length;
+
+            document.getElementById('stat-active').innerText = activeCount;
+            document.getElementById('stat-pending').innerText = pendingCount;
+            document.getElementById('stat-completed').innerText = completedCount;
         }
 
         function sort(column) {
@@ -177,9 +161,47 @@
 
         function updateSortIcons() {
             document.querySelectorAll('th span').forEach(span => span.innerText = '');
-            const arrow = currentOrder === 'ASC' ? '▲' : '▼';
+            const arrow = currentOrder === 'ASC' ? ' ▲' : ' ▼';
             const span = document.getElementById(`sort-${currentSort}`);
             if (span) span.innerText = arrow;
+        }
+
+        // Modal / Form Logic
+        function openModal() {
+            document.getElementById('modal-overlay').classList.add('open');
+            // If opening empty, ensure reset
+            if (!document.getElementById('item-id').value) {
+                resetForm();
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.remove('open');
+            resetForm();
+        }
+
+        // Close modal on outside click
+        document.getElementById('modal-overlay').addEventListener('click', (e) => {
+            if (e.target.id === 'modal-overlay') closeModal();
+        });
+
+        function editItem(item) {
+            document.getElementById('form-title').innerText = "Edit Item";
+            document.getElementById('item-id').value = item.id;
+            document.getElementById('title').value = item.title;
+            document.getElementById('reference_id').value = item.reference_id || '';
+            document.getElementById('venue').value = item.venue || '';
+            document.getElementById('due_date').value = item.due_date || '';
+            document.getElementById('submit-btn').innerText = "Update";
+
+            document.getElementById('modal-overlay').classList.add('open');
+        }
+
+        function resetForm() {
+            document.getElementById('item-form').reset();
+            document.getElementById('item-id').value = '';
+            document.getElementById('form-title').innerText = "Add New Item";
+            document.getElementById('submit-btn').innerText = "Save";
         }
 
         async function handleSubmit(e) {
@@ -193,14 +215,12 @@
             const payload = { title, reference_id, venue, due_date };
 
             if (id) {
-                // Update
                 await fetch(`${API_URL}/${id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
             } else {
-                // Create
                 await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -208,7 +228,7 @@
                 });
             }
 
-            resetForm();
+            closeModal();
             loadItems();
             loadVenues();
         }
@@ -219,32 +239,13 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status })
             });
-        }
-
-        function editItem(item) {
-            document.getElementById('form-title').innerText = "Edit Item";
-            document.getElementById('item-id').value = item.id;
-            document.getElementById('title').value = item.title;
-            document.getElementById('reference_id').value = item.reference_id || '';
-            document.getElementById('venue').value = item.venue || '';
-            document.getElementById('due_date').value = item.due_date || '';
-
-            document.getElementById('submit-btn').innerText = "Update";
-            document.getElementById('cancel-btn').style.display = "inline-block";
-
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        function resetForm() {
-            document.getElementById('item-form').reset();
-            document.getElementById('item-id').value = '';
-            document.getElementById('form-title').innerText = "Add New Item";
-            document.getElementById('submit-btn').innerText = "Add";
-            document.getElementById('cancel-btn').style.display = "none";
+            // Reload to update stats
+            loadItems();
         }
 
         document.getElementById('item-form').addEventListener('submit', handleSubmit);
 
+        // Initial load
         loadItems();
         loadVenues();
     </script>
