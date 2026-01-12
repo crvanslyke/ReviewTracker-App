@@ -99,10 +99,16 @@ def list_items(
 
     order = "DESC" if sort_order.upper() == "DESC" else "ASC"
 
-    if sort_by == "venue":
-        query += f" ORDER BY venue IS NULL, venue {order}"
-    else:  # default to due_date
-        query += f" ORDER BY due_date IS NULL, due_date {order}"
+    # Whitelist allowed sort columns to prevent SQL injection
+    allowed_sorts = {"title", "venue", "due_date", "reference_id", "status"}
+    if sort_by not in allowed_sorts:
+        sort_by = "due_date"
+
+    # Specific handling for nulls if needed, otherwise generic sort
+    if sort_by in ("venue", "due_date", "reference_id"):
+        query += f" ORDER BY {sort_by} IS NULL, {sort_by} {order}"
+    else:
+        query += f" ORDER BY {sort_by} {order}"
 
     return connection.execute(query, params)
 

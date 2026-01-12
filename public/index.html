@@ -74,6 +74,7 @@
         <form id="item-form">
             <input type="hidden" id="item-id">
             <input type="text" id="title" placeholder="Title" required>
+            <input type="text" id="reference_id" placeholder="Manuscript ID">
             <input type="text" id="venue" list="venue-list" placeholder="Venue (Journal/Conf)">
             <datalist id="venue-list">
                 <!-- Populated dynamically -->
@@ -88,28 +89,30 @@
         </form>
     </div>
 
-    <div style="margin-top: 1rem;">
-        <label>Sort by:
-            <select id="sort-select" style="width: auto; display: inline-block;">
-                <option value="due-date">Due Date</option>
-                <option value="venue">Venue</option>
-            </select>
-        </label>
-        <label>Order:
-            <select id="order-select" style="width: auto; display: inline-block;">
-                <option value="ASC">Ascending</option>
-                <option value="DESC">Descending</option>
-            </select>
-        </label>
-    </div>
+    <style>
+        th {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            background-color: #e0e0e0;
+        }
+
+        th span {
+            margin-left: 5px;
+            font-size: 0.8em;
+        }
+    </style>
 
     <table id="items-table">
         <thead>
             <tr>
-                <th>Title</th>
-                <th>Venue</th>
-                <th>Due Date</th>
-                <th>Status</th>
+                <th onclick="sort('title')">Title<span id="sort-title"></span></th>
+                <th onclick="sort('reference_id')">Manuscript ID<span id="sort-reference_id"></span></th>
+                <th onclick="sort('venue')">Venue<span id="sort-venue"></span></th>
+                <th onclick="sort('due_date')">Due Date<span id="sort-due_date"></span></th>
+                <th onclick="sort('status')">Status<span id="sort-status"></span></th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -120,6 +123,8 @@
 
     <script>
         const API_URL = '/api/items';
+        let currentSort = 'due_date';
+        let currentOrder = 'ASC';
 
         async function loadVenues() {
             const res = await fetch('/api/venues');
@@ -129,20 +134,20 @@
         }
 
         async function loadItems() {
-            const sort = document.getElementById('sort-select').value;
-            const order = document.getElementById('order-select').value;
-            const res = await fetch(`${API_URL}?sort=${sort}&order=${order}`);
+            const res = await fetch(`${API_URL}?sort=${currentSort}&order=${currentOrder}`);
             const items = await res.json();
             const tbody = document.querySelector('#items-table tbody');
             tbody.innerHTML = '';
 
+            updateSortIcons();
+
             items.forEach(item => {
-                // Escape simple quotes for onclick handler safely
                 const safeItem = JSON.stringify(item).replace(/"/g, '&quot;');
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${item.title}</td>
+                    <td>${item.reference_id || '-'}</td>
                     <td>${item.venue || '-'}</td>
                     <td>${item.due_date || '-'}</td>
                     <td>
@@ -160,14 +165,32 @@
             });
         }
 
+        function sort(column) {
+            if (currentSort === column) {
+                currentOrder = currentOrder === 'ASC' ? 'DESC' : 'ASC';
+            } else {
+                currentSort = column;
+                currentOrder = 'ASC';
+            }
+            loadItems();
+        }
+
+        function updateSortIcons() {
+            document.querySelectorAll('th span').forEach(span => span.innerText = '');
+            const arrow = currentOrder === 'ASC' ? '▲' : '▼';
+            const span = document.getElementById(`sort-${currentSort}`);
+            if (span) span.innerText = arrow;
+        }
+
         async function handleSubmit(e) {
             e.preventDefault();
             const id = document.getElementById('item-id').value;
             const title = document.getElementById('title').value;
+            const reference_id = document.getElementById('reference_id').value;
             const venue = document.getElementById('venue').value;
             const due_date = document.getElementById('due_date').value;
 
-            const payload = { title, venue, due_date };
+            const payload = { title, reference_id, venue, due_date };
 
             if (id) {
                 // Update
@@ -187,7 +210,7 @@
 
             resetForm();
             loadItems();
-            loadVenues(); // Reload venues in case a new one was added
+            loadVenues();
         }
 
         async function updateStatus(id, status) {
@@ -202,13 +225,13 @@
             document.getElementById('form-title').innerText = "Edit Item";
             document.getElementById('item-id').value = item.id;
             document.getElementById('title').value = item.title;
+            document.getElementById('reference_id').value = item.reference_id || '';
             document.getElementById('venue').value = item.venue || '';
             document.getElementById('due_date').value = item.due_date || '';
 
             document.getElementById('submit-btn').innerText = "Update";
             document.getElementById('cancel-btn').style.display = "inline-block";
 
-            // Scroll to form
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -221,10 +244,7 @@
         }
 
         document.getElementById('item-form').addEventListener('submit', handleSubmit);
-        document.getElementById('sort-select').addEventListener('change', loadItems);
-        document.getElementById('order-select').addEventListener('change', loadItems);
 
-        // Initial load
         loadItems();
         loadVenues();
     </script>
