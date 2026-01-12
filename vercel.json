@@ -1,17 +1,7 @@
 {
-    "desc": "Force Vercel to bundle the public folder so Python can serve it",
-    "functions": {
-        "api/index.py": {
-            "includeFiles": "public/**"
-        }
-    },
     "rewrites": [
         {
             "source": "/api/(.*)",
-            "destination": "/api/index.py"
-        },
-        {
-            "source": "/(.*)",
             "destination": "/api/index.py"
         }
     ]
