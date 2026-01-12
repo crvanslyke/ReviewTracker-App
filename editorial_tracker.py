@@ -36,9 +36,13 @@ class WorkItem(SQLModel, table=True):
 
 
 def get_engine():
+    db_url = DATABASE_URL
+    if db_url and db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
     # check_same_thread=False is needed for SQLite when used with FastAPI/Uvicorn reloader
-    connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-    return create_engine(DATABASE_URL, connect_args=connect_args)
+    connect_args = {"check_same_thread": False} if "sqlite" in db_url else {}
+    return create_engine(db_url, connect_args=connect_args)
 
 
 def init_db(engine) -> None:
