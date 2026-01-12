@@ -9,7 +9,7 @@ from typing import Optional
 # Add the parent directory to sys.path to import editorial_tracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from editorial_tracker import init_db, add_item, list_items, update_item, connect
+from editorial_tracker import init_db, add_item, list_items, update_item, connect, get_venues
 
 app = FastAPI()
 
@@ -50,11 +50,19 @@ class ItemUpdate(BaseModel):
     notes: Optional[str] = None
 
 @app.get("/api/items")
-def read_items(sort: str = "due-date"):
+def read_items(sort: str = "due-date", order: str = "ASC"):
     conn = get_connection()
     try:
-        rows = list_items(conn, status=None, sort_by=sort)
+        rows = list_items(conn, status=None, sort_by=sort, sort_order=order)
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+@app.get("/api/venues")
+def read_venues():
+    conn = get_connection()
+    try:
+        return get_venues(conn)
     finally:
         conn.close()
 

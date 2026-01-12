@@ -85,7 +85,10 @@ def add_item(
 
 
 def list_items(
-    connection: sqlite3.Connection, status: str | None, sort_by: str = "due-date"
+    connection: sqlite3.Connection,
+    status: str | None,
+    sort_by: str = "due-date",
+    sort_order: str = "ASC",
 ) -> Iterable[sqlite3.Row]:
     query = "SELECT * FROM work_items"
     params = []
@@ -94,12 +97,21 @@ def list_items(
         query += " WHERE status = ?"
         params.append(status)
 
+    order = "DESC" if sort_order.upper() == "DESC" else "ASC"
+
     if sort_by == "venue":
-        query += " ORDER BY venue IS NULL, venue"
+        query += f" ORDER BY venue IS NULL, venue {order}"
     else:  # default to due_date
-        query += " ORDER BY due_date IS NULL, due_date"
+        query += f" ORDER BY due_date IS NULL, due_date {order}"
 
     return connection.execute(query, params)
+
+
+def get_venues(connection: sqlite3.Connection) -> list[str]:
+    rows = connection.execute(
+        "SELECT DISTINCT venue FROM work_items WHERE venue IS NOT NULL AND venue != '' ORDER BY venue"
+    ).fetchall()
+    return [row["venue"] for row in rows]
 
 
 def update_item(connection: sqlite3.Connection, item_id: int, **fields: str | None) -> None:
