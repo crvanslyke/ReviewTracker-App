@@ -1,48 +1,48 @@
 #!/usr/bin/env python3
-"""Simple CLI app to track editorial and review work."""
+"""Simple CLI app to track editorial and review work (SQLModel version)."""
 
 from __future__ import annotations
 
 import argparse
 import csv
-import sqlite3
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
-DB_FILENAME = "editorial_tracker.db"
+from sqlmodel import Field, Session, SQLModel, create_engine, select, text
+
+# Database Configuration
+# Use DATABASE_URL env var if available (Vercel/Production), else local SQLite
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///editorial_tracker.db")
+
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 
 
-def get_db_path(db_path: str | None) -> Path:
-    return Path(db_path) if db_path else Path.cwd() / DB_FILENAME
+class WorkItem(SQLModel, table=True):
+    __tablename__ = "work_items"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str
+    reference_id: Optional[str] = None
+    role: Optional[str] = None
+    venue: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = "invited"
+    decision: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: str
+    updated_at: str
 
 
-def connect(db_path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
-    connection.row_factory = sqlite3.Row
-    return connection
+def get_engine():
+    # check_same_thread=False is needed for SQLite when used with FastAPI/Uvicorn reloader
+    connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+    return create_engine(DATABASE_URL, connect_args=connect_args)
 
 
-def init_db(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS work_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            reference_id TEXT,
-            role TEXT,
-            venue TEXT,
-            due_date TEXT,
-            status TEXT,
-            decision TEXT,
-            notes TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.commit()
+def init_db(engine) -> None:
+    SQLModel.metadata.create_all(engine)
 
 
 def now_timestamp() -> str:
@@ -50,7 +50,7 @@ def now_timestamp() -> str:
 
 
 def add_item(
-    connection: sqlite3.Connection,
+    session: Session,
     *,
     title: str,
     reference_id: str | None,
@@ -62,124 +62,120 @@ def add_item(
     notes: str | None,
 ) -> None:
     timestamp = now_timestamp()
-    connection.execute(
-        """
-        INSERT INTO work_items (
-            title, reference_id, role, venue, due_date, status, decision, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            title,
-            reference_id,
-            role,
-            venue,
-            due_date,
-            status,
-            decision,
-            notes,
-            timestamp,
-            timestamp,
-        ),
+    item = WorkItem(
+        title=title,
+        reference_id=reference_id,
+        role=role,
+        venue=venue,
+        due_date=due_date,
+        status=status,
+        decision=decision,
+        notes=notes,
+        created_at=timestamp,
+        updated_at=timestamp,
     )
-    connection.commit()
+    session.add(item)
+    session.commit()
+    session.refresh(item)
 
 
 def list_items(
-    connection: sqlite3.Connection,
+    session: Session,
     status: str | None,
-    sort_by: str = "due-date",
+    sort_by: str = "due_date",
     sort_order: str = "ASC",
-) -> Iterable[sqlite3.Row]:
-    query = "SELECT * FROM work_items"
-    params = []
+) -> Iterable[WorkItem]:
+    statement = select(WorkItem)
 
     if status:
-        query += " WHERE status = ?"
-        params.append(status)
+        statement = statement.where(WorkItem.status == status)
 
-    order = "DESC" if sort_order.upper() == "DESC" else "ASC"
-
-    # Whitelist allowed sort columns to prevent SQL injection
-    allowed_sorts = {"title", "venue", "due_date", "reference_id", "status"}
-    if sort_by not in allowed_sorts:
-        sort_by = "due_date"
-
-    # Specific handling for nulls if needed, otherwise generic sort
-    if sort_by in ("venue", "due_date", "reference_id"):
-        query += f" ORDER BY {sort_by} IS NULL, {sort_by} {order}"
+    # Dynamic sorting
+    order_column = getattr(WorkItem, sort_by, WorkItem.due_date)
+    
+    if sort_order.upper() == "DESC":
+        statement = statement.order_by(order_column.desc())
     else:
-        query += f" ORDER BY {sort_by} {order}"
+        statement = statement.order_by(order_column.asc())
 
-    return connection.execute(query, params)
+    # Secondary sort by ID for stability
+    statement = statement.order_by(WorkItem.id)
 
-
-def get_venues(connection: sqlite3.Connection) -> list[str]:
-    rows = connection.execute(
-        "SELECT DISTINCT venue FROM work_items WHERE venue IS NOT NULL AND venue != '' ORDER BY venue"
-    ).fetchall()
-    return [row["venue"] for row in rows]
+    return session.exec(statement).all()
 
 
-def update_item(connection: sqlite3.Connection, item_id: int, **fields: str | None) -> None:
-    updates = {key: value for key, value in fields.items() if value is not None}
-    if not updates:
-        raise ValueError("No fields provided to update.")
-
-    updates["updated_at"] = now_timestamp()
-    set_clause = ", ".join(f"{key} = ?" for key in updates)
-    values = list(updates.values())
-    values.append(item_id)
-
-    connection.execute(f"UPDATE work_items SET {set_clause} WHERE id = ?", values)
-    connection.commit()
+def get_venues(session: Session) -> list[str]:
+    statement = select(WorkItem.venue).where(WorkItem.venue != None).where(WorkItem.venue != "").distinct().order_by(WorkItem.venue)
+    return session.exec(statement).all()
 
 
-def export_csv(connection: sqlite3.Connection, output_path: Path) -> None:
-    rows = connection.execute("SELECT * FROM work_items ORDER BY due_date IS NULL, due_date").fetchall()
+def update_item(session: Session, item_id: int, **fields: str | None) -> None:
+    item = session.get(WorkItem, item_id)
+    if not item:
+        raise ValueError(f"Item with ID {item_id} not found.")
+
+    updates_made = False
+    for key, value in fields.items():
+        if value is not None and hasattr(item, key):
+            setattr(item, key, value)
+            updates_made = True
+
+    if updates_made:
+        item.updated_at = now_timestamp()
+        session.add(item)
+        session.commit()
+        session.refresh(item)
+
+
+def export_csv(session: Session, output_path: Path) -> None:
+    items = session.exec(select(WorkItem).order_by(WorkItem.due_date)).all()
+    
+    if not items:
+        return
+
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(rows[0].keys() if rows else [
-            "id",
-            "title",
-            "reference_id",
-            "role",
-            "venue",
-            "due_date",
-            "status",
-            "decision",
-            "notes",
-            "created_at",
-            "updated_at",
-        ])
-        for row in rows:
-            writer.writerow(row)
+        
+        # Get headers from WorkItem fields
+        headers = list(items[0].model_dump().keys())
+        writer.writerow(headers)
+        
+        for item in items:
+            writer.writerow([getattr(item, h) for h in headers])
 
 
-def print_rows(rows: Iterable[sqlite3.Row]) -> None:
-    rows = list(rows)
-    if not rows:
+def print_rows(items: Iterable[WorkItem]) -> None:
+    items = list(items)
+    if not items:
         print("No entries found.")
         return
 
-    columns = rows[0].keys()
+    headers = items[0].model_dump().keys()
+    # Basic columnar print - convert models to dicts for printing logic reuse
+    rows = [item.model_dump() for item in items]
+    
+    columns = list(headers)
     widths = {column: len(column) for column in columns}
+    
     for row in rows:
         for column in columns:
-            widths[column] = max(widths[column], len(str(row[column] or "")))
+            val = str(row.get(column) or "")
+            widths[column] = max(widths[column], len(val))
 
-    header = " | ".join(column.ljust(widths[column]) for column in columns)
+    header_str = " | ".join(column.ljust(widths[column]) for column in columns)
     divider = "-+-".join("-" * widths[column] for column in columns)
-    print(header)
+    
+    print(header_str)
     print(divider)
+    
     for row in rows:
-        print(" | ".join(str(row[column] or "").ljust(widths[column]) for column in columns))
+        print(" | ".join(str(row.get(column) or "").ljust(widths[column]) for column in columns))
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Track editorial and peer-review work.",
     )
-    parser.add_argument("--db", help="Path to the SQLite database file.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("init", help="Initialize the database.")
@@ -198,9 +194,9 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--status", help="Filter by status.")
     list_parser.add_argument(
         "--sort",
-        choices=["due-date", "venue"],
-        default="due-date",
-        help="Sort results by due date or venue.",
+        choices=["due_date", "venue", "title", "reference_id"], # Matches model field names
+        default="due_date",
+        help="Sort results by field.",
     )
 
     update_parser = subparsers.add_parser("update", help="Update a work item.")
@@ -228,61 +224,59 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    db_path = get_db_path(args.db)
-    connection = connect(db_path)
-
+    engine = get_engine()
+    
     if args.command == "init":
-        init_db(connection)
-        print(f"Initialized database at {db_path}")
+        init_db(engine)
+        print(f"Initialized database.")
         return
 
-    init_db(connection)
+    # Auto-init for convenience
+    init_db(engine)
 
-    if args.command == "add":
-        add_item(
-            connection,
-            title=args.title,
-            reference_id=args.reference_id,
-            role=args.role,
-            venue=args.venue,
-            due_date=args.due_date,
-            status=args.status,
-            decision=args.decision,
-            notes=args.notes,
-        )
-        print("Work item added.")
-        return
+    with Session(engine) as session:
+        if args.command == "add":
+            add_item(
+                session,
+                title=args.title,
+                reference_id=args.reference_id,
+                role=args.role,
+                venue=args.venue,
+                due_date=args.due_date,
+                status=args.status,
+                decision=args.decision,
+                notes=args.notes,
+            )
+            print("Work item added.")
 
-    if args.command == "list":
-        rows = list_items(connection, args.status, sort_by=args.sort)
-        print_rows(rows)
-        return
+        elif args.command == "list":
+            # Map CLI arg 'due-date' to 'due_date' if needed, though we updated choices
+            sort_field = args.sort.replace("-", "_") 
+            rows = list_items(session, args.status, sort_by=sort_field)
+            print_rows(rows)
 
-    if args.command == "update":
-        update_item(
-            connection,
-            args.id,
-            title=args.title,
-            reference_id=args.reference_id,
-            role=args.role,
-            venue=args.venue,
-            due_date=args.due_date,
-            status=args.status,
-            decision=args.decision,
-            notes=args.notes,
-        )
-        print("Work item updated.")
-        return
+        elif args.command == "update":
+            update_item(
+                session,
+                args.id,
+                title=args.title,
+                reference_id=args.reference_id,
+                role=args.role,
+                venue=args.venue,
+                due_date=args.due_date,
+                status=args.status,
+                decision=args.decision,
+                notes=args.notes,
+            )
+            print("Work item updated.")
 
-    if args.command == "status":
-        update_item(connection, args.id, status=args.status)
-        print("Status updated.")
-        return
+        elif args.command == "status":
+            update_item(session, args.id, status=args.status)
+            print("Status updated.")
 
-    if args.command == "export":
-        export_csv(connection, Path(args.output))
-        print(f"Exported data to {args.output}.")
-        return
+        elif args.command == "export":
+            export_csv(session, Path(args.output))
+            print(f"Exported data to {args.output}.")
 
 
 if __name__ == "__main__":
