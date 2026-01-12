@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editorial Tracker</title>
+    <style>
+        body { font-family: sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #ddd; }
+        th { background-color: #f4f4f4; cursor: pointer; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; }
+        input, select { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; max-width: 400px; }
+        button { padding: 0.5rem 1rem; background-color: #0070f3; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0051a2; }
+        .status-select { max-width: 150px; }
+    </style>
+</head>
+<body>
+    <h1>Editorial Tracker</h1>
+
+    <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px;">
+        <h3>Add New Item</h3>
+        <form id="add-form">
+            <input type="text" id="title" placeholder="Title" required>
+            <input type="text" id="venue" placeholder="Venue (Journal/Conf)">
+            <input type="date" id="due_date">
+            <button type="submit">Add</button>
+        </form>
+    </div>
+
+    <div style="margin-top: 1rem;">
+        <label>Sort by: 
+            <select id="sort-select" style="width: auto; display: inline-block;">
+                <option value="due-date">Due Date</option>
+                <option value="venue">Venue</option>
+            </select>
+        </label>
+    </div>
+
+    <table id="items-table">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Venue</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Items will be loaded here -->
+        </tbody>
+    </table>
+
+    <script>
+        const API_URL = '/api/items';
+
+        async function loadItems() {
+            const sort = document.getElementById('sort-select').value;
+            const res = await fetch(`${API_URL}?sort=${sort}`);
+            const items = await res.json();
+            const tbody = document.querySelector('#items-table tbody');
+            tbody.innerHTML = '';
+
+            items.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.title}</td>
+                    <td>${item.venue || '-'}</td>
+                    <td>${item.due_date || '-'}</td>
+                    <td>
+                        <select class="status-select" onchange="updateStatus(${item.id}, this.value)">
+                            <option value="invited" ${item.status === 'invited' ? 'selected' : ''}>Invited</option>
+                            <option value="active" ${item.status === 'active' ? 'selected' : ''}>Active</option>
+                            <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>Completed</option>
+                        </select>
+                    </td>
+                    <td><button onclick="updateStatus(${item.id}, 'completed')" style="font-size: 0.8rem;">Complete</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function addItem(e) {
+            e.preventDefault();
+            const title = document.getElementById('title').value;
+            const venue = document.getElementById('venue').value;
+            const due_date = document.getElementById('due_date').value;
+
+            await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, venue, due_date })
+            });
+
+            document.getElementById('add-form').reset();
+            loadItems();
+        }
+
+        async function updateStatus(id, status) {
+            await fetch(`${API_URL}/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            // Optional: Reload or just let the UI reflect the change
+        }
+
+        document.getElementById('add-form').addEventListener('submit', addItem);
+        document.getElementById('sort-select').addEventListener('change', loadItems);
+
+        // Initial load
+        loadItems();
+    </script>
+</body>
+</html>
