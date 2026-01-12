@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReviewTracker</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <div class="brand">
+                <h1>ReviewTracker</h1>
+            </div>
+            <button class="btn btn-primary" onclick="openModal()">+ New Entry</button>
+        </header>
+
+        <!-- Stats Row -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-label">Active</span>
+                <span class="stat-value" id="stat-active">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Pending</span>
+                <span class="stat-value" id="stat-pending">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Completed</span>
+                <span class="stat-value" id="stat-completed">0</span>
+            </div>
+        </div>
+
+        <!-- Main Table -->
+        <div class="card table-card">
+            <table id="items-table">
+                <thead>
+                    <tr>
+                        <th style="width: 30%;">Title / ID</th>
+                        <th>Venue</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Due Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Loaded dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Form -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="form-title">Add New Item</h3>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <form id="item-form">
+                <input type="hidden" id="item-id">
+
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" id="title" required placeholder="Paper Title">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Manuscript ID</label>
+                        <input type="text" id="reference_id" placeholder="e.g. MISQ-2024-001">
+                    </div>
+                    <div class="form-group">
+                        <label>Venue</label>
+                        <input type="text" id="venue" placeholder="Journal/Conf" list="venue-list">
+                        <datalist id="venue-list"></datalist>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="role">
+                            <option value="Reviewer">Reviewer</option>
+                            <option value="Associate Editor">Associate Editor</option>
+                            <option value="Chair">Chair</option>
+                            <option value="Author">Author</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="status">
+                            <option value="invited">Invited</option>
+                            <option value="active">Active</option>
+                            <option value="in_review">In Review</option>
+                            <option value="pending">Pending Decision</option>
+                            <option value="completed">Completed</option>
+                            <option value="accepted">Accepted</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Due Date</label>
+                    <input type="date" id="due_date">
+                </div>
+
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea id="notes" rows="3"></textarea>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="submit-btn">Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/items';
+
+        // State
+        let allItems = [];
+
+        async function init() {
+            await Promise.all([loadItems(), loadVenues()]);
+        }
+
+        async function loadItems() {
+            try {
+                const res = await fetch(API_URL);
+                if (!res.ok) throw new Error("Failed to fetch");
+                allItems = await res.json();
+                render();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function loadVenues() {
+            try {
+                const res = await fetch('/api/venues');
+                const venues = await res.json();
+                document.getElementById('venue-list').innerHTML = venues.map(v => `<option value="${v}">`).join('');
+            } catch (e) { }
+        }
+
+        function render() {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            // Stats
+            document.getElementById('stat-active').innerText = allItems.filter(i => ['active', 'invited', 'in_review'].includes(i.status)).length;
+            document.getElementById('stat-pending').innerText = allItems.filter(i => i.status === 'pending').length;
+            document.getElementById('stat-completed').innerText = allItems.filter(i => ['completed', 'accepted', 'rejected'].includes(i.status)).length;
+
+            allItems.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>
+                        <div class="cell-title">${item.title}</div>
+                        <div class="cell-subtitle">${item.reference_id || ''}</div>
+                    </td>
+                    <td>${item.venue || '-'}</td>
+                    <td><span class="badge badge-gray">${item.role || 'Reviewer'}</span></td>
+                    <td><span class="badge status-${item.status}">${item.status}</span></td>
+                    <td>${item.due_date ? new Date(item.due_date).toLocaleDateString() : '-'}</td>
+                    <td>
+                        <button class="btn-icon" onclick='editItem(${JSON.stringify(item)})'>✎</button>
+                        <button class="btn-icon delete" onclick="deleteItem(${item.id})">🗑</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Form Logic
+        document.getElementById('item-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('item-id').value;
+            const payload = {
+                title: document.getElementById('title').value,
+                reference_id: document.getElementById('reference_id').value,
+                venue: document.getElementById('venue').value,
+                role: document.getElementById('role').value,
+                status: document.getElementById('status').value,
+                due_date: document.getElementById('due_date').value || null,
+                notes: document.getElementById('notes').value
+            };
+
+            const url = id ? `${API_URL}/${id}` : API_URL;
+            const method = id ? 'PATCH' : 'POST';
+
+            await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            closeModal();
+            loadItems();
+            loadVenues();
+        });
+
+        async function deleteItem(id) {
+            if (!confirm("Delete this item?")) return;
+            await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+            loadItems();
+        }
+
+        function editItem(item) {
+            document.getElementById('form-title').innerText = "Edit Item";
+            document.getElementById('item-id').value = item.id;
+            document.getElementById('title').value = item.title;
+            document.getElementById('reference_id').value = item.reference_id || '';
+            document.getElementById('venue').value = item.venue || '';
+            document.getElementById('role').value = item.role || 'Reviewer';
+            document.getElementById('status').value = item.status;
+            document.getElementById('due_date').value = item.due_date || '';
+            document.getElementById('notes').value = item.notes || '';
+            document.getElementById('modal-overlay').classList.add('open');
+        }
+
+        function openModal() {
+            document.getElementById('item-form').reset();
+            document.getElementById('item-id').value = '';
+            document.getElementById('form-title').innerText = "Add New Item";
+            document.getElementById('modal-overlay').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.remove('open');
+        }
+
+        // Init
+        init();
+    </script>
+</body>
+
+</html>
